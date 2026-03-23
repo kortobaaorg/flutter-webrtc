@@ -89,6 +89,10 @@
 
 - (void)applyFocusMode:(NSString*)focusMode onDevice:(AVCaptureDevice *)captureDevice {
 #if TARGET_OS_IPHONE
+  // Check for NSNull and ensure focusMode is actually a string
+  if (!focusMode || ![focusMode isKindOfClass:[NSString class]]) {
+    return;
+  }
   [captureDevice lockForConfiguration:nil];
   if([@"locked" isEqualToString:focusMode]) {
       if ([captureDevice isFocusModeSupported:AVCaptureFocusModeAutoFocus]) {
@@ -170,6 +174,10 @@
 
 - (void) applyExposureMode:(NSString*)exposureMode onDevice:(AVCaptureDevice *)captureDevice {
 #if TARGET_OS_IPHONE
+  // Check for NSNull and ensure exposureMode is actually a string
+  if (!exposureMode || ![exposureMode isKindOfClass:[NSString class]]) {
+    return;
+  }
   [captureDevice lockForConfiguration:nil];
   if([@"locked" isEqualToString:exposureMode]) {
       if ([captureDevice isExposureModeSupported:AVCaptureExposureModeAutoExpose]) {
