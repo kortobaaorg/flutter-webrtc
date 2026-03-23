@@ -2508,7 +2508,8 @@ static FlutterWebRTCPlugin *sharedSingleton;
   // new encodings
   NSArray* newEncodings = [newParameters objectForKey:@"encodings"];
 
-  NSString *degradationPreference = [newParameters objectForKey:@"degradationPreference"];
+  id degradationPreferenceValue = [newParameters objectForKey:@"degradationPreference"];
+  NSString *degradationPreference = [degradationPreferenceValue isKindOfClass:[NSString class]] ? (NSString*)degradationPreferenceValue : nil;
 
   if( degradationPreference != nil) {
       if( [degradationPreference isEqualToString:@"maintain-framerate"]) {
