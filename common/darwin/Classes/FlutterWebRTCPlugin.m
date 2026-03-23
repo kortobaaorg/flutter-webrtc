@@ -781,18 +781,19 @@ static FlutterWebRTCPlugin *sharedSingleton;
     result(nil);
   } else if ([@"trackDispose" isEqualToString:call.method]) {
     NSDictionary* argsMap = call.arguments;
-    NSString* trackId = argsMap[@"trackId"];
+    id trackIdValue = argsMap[@"trackId"];
+    NSString* trackId = [trackIdValue isKindOfClass:[NSString class]] ? (NSString*)trackIdValue : nil;
     BOOL audioTrack = NO;
     for (NSString* streamId in self.localStreams) {
       RTCMediaStream* stream = [self.localStreams objectForKey:streamId];
       for (RTCAudioTrack* track in stream.audioTracks) {
-        if ([trackId isEqualToString:track.trackId]) {
+        if (trackId && [trackId isEqualToString:track.trackId]) {
           [stream removeAudioTrack:track];
           audioTrack = YES;
         }
       }
       for (RTCVideoTrack* track in stream.videoTracks) {
-        if ([trackId isEqualToString:track.trackId]) {
+        if (trackId && [trackId isEqualToString:track.trackId]) {
           [stream removeVideoTrack:track];
           CapturerStopHandler stopHandler = self.videoCapturerStopHandlers[track.trackId];
           if (stopHandler) {
