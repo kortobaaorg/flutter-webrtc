@@ -869,9 +869,15 @@ static FlutterWebRTCPlugin *sharedSingleton;
     NSDictionary* argsMap = call.arguments;
     NSNumber* textureId = argsMap[@"textureId"];
     FlutterRTCVideoRenderer* render = self.renders[textureId];
-    NSString* streamId = argsMap[@"streamId"];
-    NSString* ownerTag = argsMap[@"ownerTag"];
-    NSString* trackId = argsMap[@"trackId"];
+    id streamIdValue = argsMap[@"streamId"];
+    id ownerTagValue = argsMap[@"ownerTag"];
+    id trackIdValue = argsMap[@"trackId"];
+
+    // Check for NSNull and ensure they're actually strings before using
+    NSString* streamId = [streamIdValue isKindOfClass:[NSString class]] ? (NSString*)streamIdValue : nil;
+    NSString* ownerTag = [ownerTagValue isKindOfClass:[NSString class]] ? (NSString*)ownerTagValue : nil;
+    NSString* trackId = [trackIdValue isKindOfClass:[NSString class]] ? (NSString*)trackIdValue : nil;
+
     if (!render) {
       result([FlutterError errorWithCode:@"videoRendererSetSrcObject: render is nil"
                                  message:nil
@@ -880,7 +886,7 @@ static FlutterWebRTCPlugin *sharedSingleton;
     }
     RTCMediaStream* stream = nil;
     RTCVideoTrack* videoTrack = nil;
-    if ([ownerTag isEqualToString:@"local"]) {
+    if (ownerTag && [ownerTag isEqualToString:@"local"]) {
       stream = _localStreams[streamId];
     }
     if (!stream) {
@@ -890,7 +896,7 @@ static FlutterWebRTCPlugin *sharedSingleton;
       NSArray* videoTracks = stream ? stream.videoTracks : nil;
       videoTrack = videoTracks && videoTracks.count ? videoTracks[0] : nil;
       for (RTCVideoTrack* track in videoTracks) {
-        if ([track.trackId isEqualToString:trackId]) {
+        if (trackId && [track.trackId isEqualToString:trackId]) {
           videoTrack = track;
         }
       }
@@ -906,9 +912,15 @@ static FlutterWebRTCPlugin *sharedSingleton;
       NSDictionary* argsMap = call.arguments;
       NSNumber* viewId = argsMap[@"viewId"];
       FlutterRTCVideoPlatformViewController* render = _platformViewFactory.renders[viewId];
-      NSString* streamId = argsMap[@"streamId"];
-      NSString* ownerTag = argsMap[@"ownerTag"];
-      NSString* trackId = argsMap[@"trackId"];
+      id streamIdValue = argsMap[@"streamId"];
+      id ownerTagValue = argsMap[@"ownerTag"];
+      id trackIdValue = argsMap[@"trackId"];
+
+      // Check for NSNull and ensure they're strings
+      NSString* streamId = [streamIdValue isKindOfClass:[NSString class]] ? (NSString*)streamIdValue : nil;
+      NSString* ownerTag = [ownerTagValue isKindOfClass:[NSString class]] ? (NSString*)ownerTagValue : nil;
+      NSString* trackId = [trackIdValue isKindOfClass:[NSString class]] ? (NSString*)trackIdValue : nil;
+
       if (!render) {
         result([FlutterError errorWithCode:@"videoRendererSetSrcObject: render is nil"
                                    message:nil
@@ -917,7 +929,7 @@ static FlutterWebRTCPlugin *sharedSingleton;
       }
       RTCMediaStream* stream = nil;
       RTCVideoTrack* videoTrack = nil;
-      if ([ownerTag isEqualToString:@"local"]) {
+      if (ownerTag && [ownerTag isEqualToString:@"local"]) {
         stream = _localStreams[streamId];
       }
       if (!stream) {
@@ -927,7 +939,7 @@ static FlutterWebRTCPlugin *sharedSingleton;
         NSArray* videoTracks = stream ? stream.videoTracks : nil;
         videoTrack = videoTracks && videoTracks.count ? videoTracks[0] : nil;
         for (RTCVideoTrack* track in videoTracks) {
-          if ([track.trackId isEqualToString:trackId]) {
+          if (trackId && [track.trackId isEqualToString:trackId]) {
             videoTrack = track;
           }
         }
