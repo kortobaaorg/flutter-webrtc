@@ -138,12 +138,19 @@
     result([FlutterError errorWithCode:@"mediaStreamTrackSetFocusPointFailed" message:@"device is nil" details:nil]);
     return;
   }
-  BOOL reset = ((NSNumber *)focusPoint[@"reset"]).boolValue;
+  id resetValue = focusPoint[@"reset"];
+  BOOL reset = [resetValue isKindOfClass:[NSNumber class]] ? ((NSNumber *)resetValue).boolValue : NO;
   double x = 0.5;
   double y = 0.5;
   if (!reset) {
-    x = ((NSNumber *)focusPoint[@"x"]).doubleValue;
-    y = ((NSNumber *)focusPoint[@"y"]).doubleValue;
+    id xValue = focusPoint[@"x"];
+    id yValue = focusPoint[@"y"];
+    if ([xValue isKindOfClass:[NSNumber class]]) {
+      x = ((NSNumber *)xValue).doubleValue;
+    }
+    if ([yValue isKindOfClass:[NSNumber class]]) {
+      y = ((NSNumber *)yValue).doubleValue;
+    }
   }
   if (!device.isFocusPointOfInterestSupported) {
     NSLog(@"Focus point of interest is not supported. Can't set focusPoint");
@@ -252,12 +259,19 @@
     return;
   }
 
-  BOOL reset = ((NSNumber *)exposurePoint[@"reset"]).boolValue;
+  id resetValue = exposurePoint[@"reset"];
+  BOOL reset = [resetValue isKindOfClass:[NSNumber class]] ? ((NSNumber *)resetValue).boolValue : NO;
   double x = 0.5;
   double y = 0.5;
   if (!reset) {
-    x = ((NSNumber *)exposurePoint[@"x"]).doubleValue;
-    y = ((NSNumber *)exposurePoint[@"y"]).doubleValue;
+    id xValue = exposurePoint[@"x"];
+    id yValue = exposurePoint[@"y"];
+    if ([xValue isKindOfClass:[NSNumber class]]) {
+      x = ((NSNumber *)xValue).doubleValue;
+    }
+    if ([yValue isKindOfClass:[NSNumber class]]) {
+      y = ((NSNumber *)yValue).doubleValue;
+    }
   }
   if (!device.isExposurePointOfInterestSupported) {
     NSLog(@"Exposure point of interest is not supported. Can't set exposurePoint");

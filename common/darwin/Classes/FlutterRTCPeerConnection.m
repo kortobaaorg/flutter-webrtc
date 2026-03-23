@@ -730,7 +730,14 @@ NSDictionary<NSString*, NSString*>* stringToParameters(NSString* str) {
 
 - (void)peerConnectionGetRtpReceiverCapabilities:(nonnull NSDictionary*)argsMap
                                           result:(nonnull FlutterResult)result {
-  NSString* kind = argsMap[@"kind"];
+  id kindValue = argsMap[@"kind"];
+  NSString* kind = [kindValue isKindOfClass:[NSString class]] ? (NSString*)kindValue : nil;
+  if (!kind) {
+    result([FlutterError errorWithCode:@"GetRtpReceiverCapabilitiesFailed"
+                               message:@"kind parameter is missing or invalid"
+                               details:nil]);
+    return;
+  }
   RTCRtpCapabilities* caps =
     [self.peerConnectionFactory rtpReceiverCapabilitiesForKind:mediaTypeFromString(kind)];
   NSMutableArray* codecsMap = [NSMutableArray array];
@@ -759,7 +766,14 @@ NSDictionary<NSString*, NSString*>* stringToParameters(NSString* str) {
 
 - (void)peerConnectionGetRtpSenderCapabilities:(nonnull NSDictionary*)argsMap
                                         result:(nonnull FlutterResult)result {
-  NSString* kind = argsMap[@"kind"];
+  id kindValue = argsMap[@"kind"];
+  NSString* kind = [kindValue isKindOfClass:[NSString class]] ? (NSString*)kindValue : nil;
+  if (!kind) {
+    result([FlutterError errorWithCode:@"GetRtpSenderCapabilitiesFailed"
+                               message:@"kind parameter is missing or invalid"
+                               details:nil]);
+    return;
+  }
   RTCRtpCapabilities* caps =
       [self.peerConnectionFactory rtpSenderCapabilitiesForKind:mediaTypeFromString(kind)];
   NSMutableArray* codecsMap = [NSMutableArray array];
@@ -810,7 +824,15 @@ NSDictionary<NSString*, NSString*>* stringToParameters(NSString* str) {
 
 - (void)transceiverSetCodecPreferences:(nonnull NSDictionary*)argsMap
                                 result:(nonnull FlutterResult)result {
-  NSString* peerConnectionId = argsMap[@"peerConnectionId"];
+  id peerConnectionIdValue = argsMap[@"peerConnectionId"];
+  NSString* peerConnectionId = [peerConnectionIdValue isKindOfClass:[NSString class]] ? (NSString*)peerConnectionIdValue : nil;
+  if (!peerConnectionId) {
+    result([FlutterError
+        errorWithCode:@"transceiverSetCodecPreferencesFailed"
+              message:@"peerConnectionId is missing or invalid"
+              details:nil]);
+    return;
+  }
   RTCPeerConnection* peerConnection = self.peerConnections[peerConnectionId];
   if (peerConnection == nil) {
     result([FlutterError
@@ -819,7 +841,14 @@ NSDictionary<NSString*, NSString*>* stringToParameters(NSString* str) {
               details:nil]);
     return;
   }
-  NSString* transceiverId = argsMap[@"transceiverId"];
+  id transceiverIdValue = argsMap[@"transceiverId"];
+  NSString* transceiverId = [transceiverIdValue isKindOfClass:[NSString class]] ? (NSString*)transceiverIdValue : nil;
+  if (!transceiverId) {
+    result([FlutterError errorWithCode:@"transceiverSetCodecPreferencesFailed"
+                               message:@"transceiverId is missing or invalid"
+                               details:nil]);
+    return;
+  }
   RTCRtpTransceiver* transcevier = [self getRtpTransceiverById:peerConnection Id:transceiverId];
   if (transcevier == nil) {
     result([FlutterError errorWithCode:@"transceiverSetCodecPreferencesFailed"
