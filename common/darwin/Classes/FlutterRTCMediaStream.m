@@ -125,23 +125,25 @@ typedef void (^NavigatorUserMediaSuccessCallback)(RTCMediaStream* mediaStream);
   RTCMediaConstraints *rtcConstraints;
   if ([audioConstraints isKindOfClass:[NSDictionary class]]) {
     // constraints.audio.deviceId
-    NSString* deviceId = audioConstraints[@"deviceId"];
+    id deviceIdValue = audioConstraints[@"deviceId"];
 
-    if (deviceId) {
-      audioDeviceId = deviceId;
+    // Check for NSNull and ensure it's actually a string before using
+    if (deviceIdValue && [deviceIdValue isKindOfClass:[NSString class]]) {
+      audioDeviceId = (NSString*)deviceIdValue;
     }
 
     rtcConstraints = [self parseMediaConstraints:audioConstraints];
     // constraints.audio.optional.sourceId
     id optionalConstraints = audioConstraints[@"optional"];
     if (optionalConstraints && [optionalConstraints isKindOfClass:[NSArray class]] &&
-        !deviceId) {
+        !deviceIdValue) {
       NSArray* options = optionalConstraints;
       for (id item in options) {
         if ([item isKindOfClass:[NSDictionary class]]) {
-          NSString* sourceId = ((NSDictionary*)item)[@"sourceId"];
-          if (sourceId) {
-            audioDeviceId = sourceId;
+          id sourceIdValue = ((NSDictionary*)item)[@"sourceId"];
+          // Check for NSNull and ensure it's actually a string before using
+          if (sourceIdValue && [sourceIdValue isKindOfClass:[NSString class]]) {
+            audioDeviceId = (NSString*)sourceIdValue;
           }
         }
       }
@@ -363,11 +365,13 @@ typedef void (^NavigatorUserMediaSuccessCallback)(RTCMediaStream* mediaStream);
 
   if ([videoConstraints isKindOfClass:[NSDictionary class]]) {
     // constraints.video.deviceId
-    NSString* deviceId = videoConstraints[@"deviceId"];
+    id deviceIdValue = videoConstraints[@"deviceId"];
 
-    if (deviceId) {
+    // Check for NSNull and ensure it's actually a string before using
+    if (deviceIdValue && [deviceIdValue isKindOfClass:[NSString class]]) {
+        NSString* deviceId = (NSString*)deviceIdValue;
         for (AVCaptureDevice *device in captureDevices) {
-            if( [deviceId isEqualToString:device.uniqueID]) {
+            if([deviceId isEqualToString:device.uniqueID]) {
                 videoDevice = device;
                 videoDeviceId = deviceId;
             }
@@ -381,10 +385,12 @@ typedef void (^NavigatorUserMediaSuccessCallback)(RTCMediaStream* mediaStream);
       NSArray* options = optionalVideoConstraints;
       for (id item in options) {
         if ([item isKindOfClass:[NSDictionary class]]) {
-          NSString* sourceId = ((NSDictionary*)item)[@"sourceId"];
-          if (sourceId) {
+          id sourceIdValue = ((NSDictionary*)item)[@"sourceId"];
+          // Check for NSNull and ensure it's actually a string before using
+          if (sourceIdValue && [sourceIdValue isKindOfClass:[NSString class]]) {
+              NSString* sourceId = (NSString*)sourceIdValue;
               for (AVCaptureDevice *device in captureDevices) {
-                  if( [sourceId isEqualToString:device.uniqueID]) {
+                  if([sourceId isEqualToString:device.uniqueID]) {
                       videoDevice = device;
                       videoDeviceId = sourceId;
                   }
