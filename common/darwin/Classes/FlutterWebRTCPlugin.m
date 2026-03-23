@@ -2568,10 +2568,12 @@ static FlutterWebRTCPlugin *sharedSingleton;
       NSNumber* scaleResolutionDownBy = [newParams objectForKey:@"scaleResolutionDownBy"];
       if (scaleResolutionDownBy != nil)
         currentParams.scaleResolutionDownBy = scaleResolutionDownBy;
-      NSString* priority = [newParams objectForKey:@"priority"];
+      id priorityValue = [newParams objectForKey:@"priority"];
+      NSString* priority = [priorityValue isKindOfClass:[NSString class]] ? (NSString*)priorityValue : nil;
       if (priority != nil)
         currentParams.bitratePriority = [self stringToBitratePriority:priority];
-      NSString* networkPriority = [newParams objectForKey:@"networkPriority"];
+      id networkPriorityValue = [newParams objectForKey:@"networkPriority"];
+      NSString* networkPriority = [networkPriorityValue isKindOfClass:[NSString class]] ? (NSString*)networkPriorityValue : nil;
       if (networkPriority != nil)
         currentParams.networkPriority = [self stringToRTCPriority:networkPriority];
     }
