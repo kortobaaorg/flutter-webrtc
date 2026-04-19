@@ -23,18 +23,25 @@
     bool success = [session setCategory:config.category withOptions:config.categoryOptions error:&error];
     if (!success)
       NSLog(@"ensureAudioSessionWithRecording[true]: setCategory failed due to: %@", error);
-    success = [session setMode:config.mode error:&error];
-    if (!success)
-      NSLog(@"ensureAudioSessionWithRecording[true]: setMode failed due to: %@", error);
+    // 2026-04-20 FIX: guard setMode to avoid -50 paramErr when CallKit already
+    // set the mode on incoming calls (Android→iOS callee path).
+    if (session.mode != config.mode) {
+      success = [session setMode:config.mode error:&error];
+      if (!success)
+        NSLog(@"ensureAudioSessionWithRecording[true]: setMode failed due to: %@", error);
+    }
     [session unlockForConfiguration];
   } else if (!recording && (session.category == AVAudioSessionCategoryAmbient ||
                             session.category == AVAudioSessionCategorySoloAmbient)) {
     config.mode = AVAudioSessionModeDefault;
     [session lockForConfiguration];
     NSError* error = nil;
-    bool success = [session setMode:config.mode error:&error];
-    if (!success)
-      NSLog(@"ensureAudioSessionWithRecording[false]: setMode failed due to: %@", error);
+    // 2026-04-20 FIX: guard setMode (see Android→iOS -50 note above).
+    if (session.mode != config.mode) {
+      bool success = [session setMode:config.mode error:&error];
+      if (!success)
+        NSLog(@"ensureAudioSessionWithRecording[false]: setMode failed due to: %@", error);
+    }
     [session unlockForConfiguration];
   }
 }
@@ -73,7 +80,10 @@
   [session lockForConfiguration];
   NSError* error = nil;
   if (!enable) {
-    [session setMode:config.mode error:&error];
+    // 2026-04-20 FIX: guard setMode — skip if already correct mode.
+    if (session.mode != config.mode) {
+      [session setMode:config.mode error:&error];
+    }
     BOOL success = [session setCategory:config.category
                             withOptions:AVAudioSessionCategoryOptionAllowAirPlay |
                                         AVAudioSessionCategoryOptionAllowBluetoothA2DP |
@@ -85,7 +95,10 @@
     if (!success)
       NSLog(@"setSpeakerphoneOn: Port override failed due to: %@", error);
   } else {
-    [session setMode:config.mode error:&error];
+    // 2026-04-20 FIX: guard setMode — skip if already correct mode.
+    if (session.mode != config.mode) {
+      [session setMode:config.mode error:&error];
+    }
     BOOL success = [session setCategory:config.category
                             withOptions:AVAudioSessionCategoryOptionDefaultToSpeaker |
                                         AVAudioSessionCategoryOptionAllowAirPlay |
@@ -106,7 +119,10 @@
   RTCAudioSessionConfiguration* config = [RTCAudioSessionConfiguration webRTCConfiguration];
   [session lockForConfiguration];
   NSError* error = nil;
-  [session setMode:config.mode error:&error];
+  // 2026-04-20 FIX: guard setMode — skip if already correct mode.
+  if (session.mode != config.mode) {
+    [session setMode:config.mode error:&error];
+  }
   BOOL success = [session setCategory:config.category
                           withOptions:AVAudioSessionCategoryOptionAllowAirPlay |
                                       AVAudioSessionCategoryOptionAllowBluetoothA2DP |
@@ -218,7 +234,10 @@
 
   if(appleAudioMode != nil) {
     config.mode = [AudioUtils audioSessionModeFromString:appleAudioMode];
-    [session setMode:config.mode error:nil];
+    // 2026-04-20 FIX: guard setMode — skip if already correct mode.
+    if (session.mode != config.mode) {
+      [session setMode:config.mode error:nil];
+    }
   }
 
   [session unlockForConfiguration];
