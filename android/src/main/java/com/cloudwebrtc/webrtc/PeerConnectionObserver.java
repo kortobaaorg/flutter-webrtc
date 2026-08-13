@@ -54,7 +54,8 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
   private PeerConnection peerConnection;
   private final PeerConnection.RTCConfiguration configuration;
   final Map<String, MediaStream> remoteStreams = new HashMap<>();
-  final Map<String, MediaStreamTrack> remoteTracks = new HashMap<>();
+  private final RemoteTrackRegistry<MediaStreamTrack> remoteTracks =
+      new RemoteTrackRegistry<>();
   final Map<String, RtpTransceiver> transceivers = new HashMap<>();
   private final StateProvider stateProvider;
   private final EventChannel eventChannel;
@@ -417,6 +418,7 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
       String trackId = track.id();
 
       remoteTracks.put(trackId, track);
+      stateProvider.onRemoteTrackAdded(id, streamId, track);
 
       ConstraintsMap trackInfo = new ConstraintsMap();
       trackInfo.putString("id", trackId);
@@ -432,6 +434,7 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
       String trackId = track.id();
 
       remoteTracks.put(trackId, track);
+      stateProvider.onRemoteTrackAdded(id, streamId, track);
 
       ConstraintsMap trackInfo = new ConstraintsMap();
       trackInfo.putString("id", trackId);
@@ -460,10 +463,10 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
     String streamId = mediaStream.getId();
 
     for (VideoTrack track : mediaStream.videoTracks) {
-      this.remoteTracks.remove(track.id());
+      this.remoteTracks.remove(track.id(), track);
     }
     for (AudioTrack track : mediaStream.audioTracks) {
-      this.remoteTracks.remove(track.id());
+      this.remoteTracks.remove(track.id(), track);
     }
 
     ConstraintsMap params = new ConstraintsMap();
@@ -821,6 +824,9 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
         Double scaleResolutionDownBy = (Double) encoding.get("scaleResolutionDownBy");
         if (scaleResolutionDownBy != null)
           currentParams.scaleResolutionDownBy = scaleResolutionDownBy;
+        String scalabilityMode = (String) encoding.get("scalabilityMode");
+        if (scalabilityMode != null)
+          currentParams.scalabilityMode = scalabilityMode;
         String priority = (String) encoding.get("priority");
         if (priority != null)
           currentParams.bitratePriority = stringToBitratePriority(priority);
@@ -878,6 +884,9 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
       }
       if (encoding.ssrc != null) {
         map.putLong("ssrc", encoding.ssrc);
+      }
+      if (encoding.scalabilityMode != null) {
+        map.putString("scalabilityMode", encoding.scalabilityMode);
       }
       map.putString("priority", bitratePriorityToString(encoding.bitratePriority));
       map.putString("networkPriority", priorityToString(encoding.networkPriority));
@@ -1213,13 +1222,18 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
     for (RtpTransceiver transceiver : transceivers) {
       RtpReceiver receiver = transceiver.getReceiver();
       if (receiver != null) {
-        if (receiver.track() != null && receiver.track().id().equals(trackId)) {
-          track = receiver.track();
+        MediaStreamTrack receiverTrack = receiver.track();
+        if (receiverTrack != null && receiverTrack.id().equals(trackId)) {
+          track = receiverTrack;
           break;
         }
       }
     }
     return track;
+  }
+
+  MediaStreamTrack getRemoteTrack(String trackId) {
+    return remoteTracks.get(trackId);
   }
 
   public String getNextDataChannelUUID() {

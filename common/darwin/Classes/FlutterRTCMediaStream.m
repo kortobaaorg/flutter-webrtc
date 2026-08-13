@@ -767,6 +767,12 @@ typedef void (^NavigatorUserMediaSuccessCallback)(RTCMediaStream* mediaStream);
   }
 #endif
 #if TARGET_OS_IPHONE
+  if (!self.audioSessionManagementEnabled) {
+    if (result)
+      result(nil);
+    return;
+  }
+
   RTCAudioSession* session = [RTCAudioSession sharedInstance];
   for (AVAudioSessionPortDescription* port in session.session.availableInputs) {
     if ([port.UID isEqualToString:deviceId]) {
@@ -799,6 +805,11 @@ typedef void (^NavigatorUserMediaSuccessCallback)(RTCMediaStream* mediaStream);
   }
 #endif
 #if TARGET_OS_IPHONE
+  if (!self.audioSessionManagementEnabled) {
+    result(nil);
+    return;
+  }
+
   RTCAudioSession* session = [RTCAudioSession sharedInstance];
   NSError* setCategoryError = nil;
 

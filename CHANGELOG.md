@@ -1,9 +1,59 @@
 
 # Changelog
 
+[1.6.0] - 2026-07-29
+
+* [Darwin] feat: Swift Package Manager support. Apps with Flutter's SPM integration enabled consume the plugin as a Swift package automatically; CocoaPods remains fully supported (#2062).
+* [iOS] fix: replace the private `RPSystemBroadcastPickerView` `buttonPressed:` selector with public UIKit APIs, App Store review rejected binaries containing it (#2121).
+* [Darwin/Android] fix: serialize data channel `eventSink`/`eventQueue` access between the WebRTC signaling thread and the platform thread. On iOS the unsynchronized access could crash with `EXC_BAD_ACCESS` in `objc_retain` inside `-[RTCDataChannel(Flutter) onListenWithArguments:eventSink:]` (#2118).
+* [Darwin] feat: expose the audio device module's microphone mute mode (`Helper.setMicrophoneMuteMode` / `Helper.getMicrophoneMuteMode`). `voiceProcessing` (the default) plays the platform mute tone on mute/unmute; `inputMixer` and `restartEngine` mute silently (#2098, #2105).
+* [Darwin/Android] feat: add ADM-level microphone mute (`Helper.setMicrophoneMuted` / `Helper.isMicrophoneMuted`), independent of `MediaStreamTrack.enabled` (#2105).
+* [iOS/macOS] feat: `RTCVideoPlatformView.placeholderBuilder` to show a widget until the first frame renders (#2102).
+* [Android] feat: option to disable the built-in hardware AEC/NS (#2104).
+* [Android] feat: expose `getStreamForId` to embedders (#2109).
+* [Android] fix: stop-time deadlock/ANR in `OrientationAwareScreenCapturer` (#2092).
+* [Android] fix: NPE in `setFocusPoint`/`setExposurePoint` when the orientation cache was never populated (#2113).
+* [Darwin] fix: create the parent directory before `captureFrame` writes the image file (#2090).
+
+[1.5.2] - 2026-06-20
+
+* [Android] expose the internally managed audio device module to embedders (#2099).
+* [Windows] fix libwebrtc extraction when the plugin is loaded through a symlink (#2100).
+
+[1.5.1] - 2026-06-14
+
+* [Android] fix: recreate the texture surface when the incoming frame size changes, so simulcast layer upgrades no longer stay blurry (#2085).
+* [Android] chore: bump audioswitch to 039a35ae, aligning with the LiveKit Android SDK (Communication Device API support, wired headset and Bluetooth fixes) (#2084).
+* [Android] feat: add `fullScreenOnly` option to `requestCapturePermission` to force entire-screen capture on API 34+ (#2079).
+* [Darwin] fix: call `SetRecordingDevice(0)` when no sourceId is supplied (#2072).
+
+[1.5.0] - 2026-06-12
+
+* [iOS/macOS] feat: enable platform rendering (`RTCVideoPlatFormView`) on macOS, with a shared Darwin implementation (#2058).
+* [iOS/macOS] feat: use the AVAudioEngine audio device module on both platforms, enabling Apple platform voice processing (AEC/NS/AGC) and the audio processing options API on macOS (#2009, #2082).
+* [Windows] feat: loopback capture for application and desktop audio (#2060).
+* [iOS/macOS] feat: allow embedders to own audio session management (#2069).
+* [Android] feat: expose the peer connection factory to embedders (#2077).
+* [Android] chore: support AGP 9 built-in Kotlin; apply KGP only when built-in Kotlin is inactive (#2075).
+* [Windows/Linux] fix: map echoCancellation/noiseSuppression/autoGainControl constraints to RTCAudioOptions (#2068).
+* [Android] fix: screen capture rotation (#2055) and rotation after orientation changes (#2048).
+* [Android] fix: prevent CameraAccessException on concurrent video calls (#2013).
+* [Android] fix: tolerate Qualcomm/Hisi encoders in VideoFileRenderer (#2030) and guard muxer writes against invalid sample buffers (#2031).
+* [Android] fix: IllegalStateException when the app is swipe-killed during a session (#2033).
+* [iOS] fix: audio session output port override for speaker toggle (#1941).
+* [Dart] fix: handling of `KeyDerivationAlgorithm` option (#2049).
+* [Windows/Linux] chore: drive prebuilt libwebrtc download from `third_party/libwebrtc_version.ini` (#2061).
+* [Darwin/Android] chore: bump WebRTC-SDK to 144.7559.09 (#2078).
+* [Windows/Linux] chore: bump prebuilt libwebrtc to m144.7559.09 (#2078).
+
+[1.4.1] -2026-03-24
+
+* [Dart] fixed scalabilityMode (#2022).
+* [Windows/Linux] sanitize UTF-8 for device strings before platform messages(#2021)
+
 [1.4.0] -2026-03-17
 
-* [macOS]: use ScreenCaptureKit for screen capture (fallback to RTCDesktopCapturer) by @EnterDevelopers in https://github.com/flutter-webrtc/flutter-webrtc/pull/1991
+* [macOS]: use ScreenCaptureKit for screen capture (fallback to RTCDesktopCapturer) by @EnterDevelopers in (#1991)
 * [libwebrtc]: bump version for libwebrtc to m144.
 * [Win/Linux]: DataPacketCryptor for win/linux.
 

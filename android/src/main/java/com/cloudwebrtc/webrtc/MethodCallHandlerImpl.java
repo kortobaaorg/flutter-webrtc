@@ -130,6 +130,10 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
 
   private JavaAudioDeviceModule audioDeviceModule;
 
+  // JavaAudioDeviceModule has no mute getter, so mirror the last value set
+  // via the "setMicrophoneMuted" method call.
+  private boolean microphoneMuted = false;
+
   private FlutterRTCFrameCryptor frameCryptor;
 
   private FlutterDataPacketCryptor dataPacketCryptor;
@@ -171,22 +175,41 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
 
   void dispose() {
     for (final MediaStream mediaStream : localStreams.values()) {
-      streamDispose(mediaStream);
-      mediaStream.dispose();
+      try {
+        streamDispose(mediaStream);
+      } catch (Exception e) {
+        Log.w(TAG, "dispose(): error in streamDispose", e);
+      }
+      try {
+        mediaStream.audioTracks.clear();
+        mediaStream.videoTracks.clear();
+        mediaStream.preservedVideoTracks.clear();
+        mediaStream.dispose();
+      } catch (Exception e) {
+        Log.w(TAG, "dispose(): error disposing media stream", e);
+      }
     }
     localStreams.clear();
     synchronized (localTracks) {
       for (final LocalTrack track : localTracks.values()) {
-        track.dispose();
+        try {
+          track.dispose();
+        } catch (Exception e) {
+          Log.w(TAG, "dispose(): error disposing local track", e);
+        }
       }
       localTracks.clear();
     }
     for (final PeerConnectionObserver connection : mPeerConnectionObservers.values()) {
-      peerConnectionDispose(connection);
+      try {
+        peerConnectionDispose(connection);
+      } catch (Exception e) {
+        Log.w(TAG, "dispose(): error disposing peer connection", e);
+      }
     }
     mPeerConnectionObservers.clear();
   }
-  private void initialize(boolean bypassVoiceProcessing, int networkIgnoreMask, boolean forceSWCodec, List<String> forceSWCodecList,
+  private void initialize(boolean bypassVoiceProcessing, boolean androidUseHardwareAudioProcessing, int networkIgnoreMask, boolean forceSWCodec, List<String> forceSWCodecList,
   @Nullable ConstraintsMap androidAudioConfiguration, Severity logSeverity, @Nullable Integer audioSampleRate, @Nullable Integer audioOutputSampleRate) {
     if (mFactory != null) {
       return;
@@ -237,7 +260,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
                         .setUseStereoOutput(true)
                         .setAudioSource(MediaRecorder.AudioSource.MIC);
     } else {
-      boolean useHardwareAudioProcessing = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
+      boolean useHardwareAudioProcessing = androidUseHardwareAudioProcessing && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
       boolean useLowLatency = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O;
       audioDeviceModuleBuilder.setUseHardwareAcousticEchoCanceler(useHardwareAudioProcessing)
                         .setUseLowLatency(useLowLatency)
@@ -409,6 +432,14 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
           enableBypassVoiceProcessing = (boolean)options.get("bypassVoiceProcessing");
         }
 
+        // Defaults to true, matching the previous behaviour. Set to false to leave the
+        // platform hardware AEC/NS off so the WebRTC software APM handles echo/noise
+        // instead. Useful on devices whose built-in AEC is unreliable (#1433).
+        boolean androidUseHardwareAudioProcessing = true;
+        if(options.get("androidUseHardwareAudioProcessing") != null) {
+          androidUseHardwareAudioProcessing = (boolean)options.get("androidUseHardwareAudioProcessing");
+        }
+
         Severity logSeverity = Severity.LS_NONE;
         if (constraintsMap.hasKey("logSeverity")
                 && constraintsMap.getType("logSeverity") == ObjectType.String) {
@@ -428,7 +459,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
           audioOutputSampleRate = constraintsMap.getInt("audioOutputSampleRate");
         }
 
-        initialize(enableBypassVoiceProcessing, networkIgnoreMask, forceSWCodec, forceSWCodecList, androidAudioConfiguration, logSeverity, audioSampleRate, audioOutputSampleRate);
+        initialize(enableBypassVoiceProcessing, androidUseHardwareAudioProcessing, networkIgnoreMask, forceSWCodec, forceSWCodecList, androidAudioConfiguration, logSeverity, audioSampleRate, audioOutputSampleRate);
         result.success(null);
         break;
       }
@@ -711,7 +742,12 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
           stream = getStreamForId(streamId, ownerTag);
         }
         if (trackId != null && !trackId.equals("0")){
-          render.setStream(stream, trackId, ownerTag);
+          MediaStreamTrack track = getTrackForId(trackId, ownerTag);
+          if (track instanceof VideoTrack) {
+            render.setTrack((VideoTrack) track, streamId, ownerTag);
+          } else {
+            render.setStream(stream, trackId, ownerTag);
+          }
         } else {
           render.setStream(stream, ownerTag);
         }
@@ -821,7 +857,9 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
         result.success(null);
         break;
       case "requestCapturePermission": {
-        getUserMediaImpl.requestCapturePermission(result);
+        Boolean fullScreenOnlyArg = call.argument("fullScreenOnly");
+        boolean fullScreenOnly = fullScreenOnlyArg != null && fullScreenOnlyArg;
+        getUserMediaImpl.requestCapturePermission(result, fullScreenOnly);
         break;
       }
       case "getDisplayMedia": {
@@ -1122,6 +1160,25 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
             result.success(null);
           });
         });
+        break;
+      }
+      case "setMicrophoneMuted": {
+        Boolean muted = call.argument("muted");
+        if (muted == null) {
+          resultError("setMicrophoneMuted", "muted is required", result);
+          break;
+        }
+        if (audioDeviceModule == null) {
+          resultError("setMicrophoneMuted", "audioDeviceModule is null", result);
+          break;
+        }
+        audioDeviceModule.setMicrophoneMute(muted);
+        microphoneMuted = muted;
+        result.success(null);
+        break;
+      }
+      case "isMicrophoneMuted": {
+        result.success(microphoneMuted);
         break;
       }
       case "setLogSeverity": {
@@ -1504,10 +1561,27 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     }
   }
 
+  @Override
+  public void onRemoteTrackAdded(
+      String peerConnectionId, String streamId, MediaStreamTrack track) {
+    if (!(track instanceof VideoTrack)) {
+      return;
+    }
+    final String trackId = track.id();
+    mainHandler.post(() -> {
+      for (int i = 0; i < renders.size(); i++) {
+        FlutterRTCVideoRenderer renderer = renders.valueAt(i);
+        if (renderer.checkVideoTrack(trackId, peerConnectionId)) {
+          renderer.setTrack((VideoTrack) track, streamId, peerConnectionId);
+        }
+      }
+    });
+  }
+
   public MediaStreamTrack getRemoteTrack(String trackId) {
     for (Entry<String, PeerConnectionObserver> entry : mPeerConnectionObservers.entrySet()) {
       PeerConnectionObserver pco = entry.getValue();
-      MediaStreamTrack track = pco.remoteTracks.get(trackId);
+      MediaStreamTrack track = pco.getRemoteTrack(trackId);
       if (track == null) {
         track = pco.getTransceiversTrack(trackId);
       }
@@ -1543,6 +1617,11 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
   @Override
   public PeerConnectionFactory getPeerConnectionFactory() {
     return mFactory;
+  }
+
+  @Nullable
+  public JavaAudioDeviceModule getAudioDeviceModule() {
+    return audioDeviceModule;
   }
 
   @Override
@@ -1603,7 +1682,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
           continue;
 
         PeerConnectionObserver pco = entry.getValue();
-        mediaStreamTrack = pco.remoteTracks.get(trackId);
+        mediaStreamTrack = pco.getRemoteTrack(trackId);
 
         if (mediaStreamTrack == null) {
           mediaStreamTrack = pco.getTransceiversTrack(trackId);
@@ -2133,18 +2212,28 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
   public void streamDispose(final MediaStream stream) {
     List<VideoTrack> videoTracks = stream.videoTracks;
     for (VideoTrack track : videoTracks) {
-      synchronized (localTracks) {
-        localTracks.remove(track.id());
+      try {
+        String trackId = track.id();
+        synchronized (localTracks) {
+          localTracks.remove(trackId);
+        }
+        getUserMediaImpl.removeVideoCapturer(trackId);
+        stream.removeTrack(track);
+      } catch (IllegalStateException e) {
+        Log.d(TAG, "streamDispose(): video track already disposed, skipping");
       }
-      getUserMediaImpl.removeVideoCapturer(track.id());
-      stream.removeTrack(track);
     }
     List<AudioTrack> audioTracks = stream.audioTracks;
     for (AudioTrack track : audioTracks) {
-      synchronized (localTracks) {
-        localTracks.remove(track.id());
+      try {
+        String trackId = track.id();
+        synchronized (localTracks) {
+          localTracks.remove(trackId);
+        }
+        stream.removeTrack(track);
+      } catch (IllegalStateException e) {
+        Log.d(TAG, "streamDispose(): audio track already disposed, skipping");
       }
-      stream.removeTrack(track);
     }
   }
 
