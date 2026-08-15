@@ -353,7 +353,10 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
       // Filtered to the audio path so this stays readable.
       if ([logMessage containsString:@"audio"] || [logMessage containsString:@"Audio"] ||
           [logMessage containsString:@"ADM"] || [logMessage containsString:@"RTCAudio"] ||
-          [logMessage containsString:@"VPIO"] || [logMessage containsString:@"record"]) {
+          [logMessage containsString:@"VPIO"] || [logMessage containsString:@"record"] ||
+          [logMessage containsString:@"Record"] || [logMessage containsString:@"REC"] ||
+          [logMessage containsString:@"voice_processing"] || [logMessage containsString:@"InitRecording"] ||
+          [logMessage containsString:@"StartRecording"] || [logMessage containsString:@"mic"]) {
         // %{public}@ is required: the unified log redacts dynamic string
         // arguments to <private> by default, so plain NSLog produced 328
         // lines of "<private>" and told us nothing (2026-08-15).
@@ -396,8 +399,12 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
     //
     // Default to Warning when the app asks for none, so audio-unit failures
     // are visible in the device console without drowning it in verbose spam.
+    // Info, not Warning: at Warning the audio device module only emits its
+    // periodic PLAY/REC statistics, which say nothing about why capture never
+    // started. The start/stop sequence and its failures are logged at Info.
+    // The console filter below keeps this to the audio path only.
     RTCLoggingSeverity effective =
-        (severity == RTCLoggingSeverityNone) ? RTCLoggingSeverityWarning : severity;
+        (severity == RTCLoggingSeverityNone) ? RTCLoggingSeverityInfo : severity;
     RTCSetMinDebugLogLevel(effective);
     [self initLoggerCallback:effective];
 
