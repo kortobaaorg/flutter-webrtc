@@ -346,6 +346,15 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
   if(loggerCallback == nil) {
     loggerCallback = [RTC_OBJC_TYPE(RTCCallbackLogger) new];
     [loggerCallback start:^(NSString *logMessage) {
+      // Also emit to the device console. The Dart sink is silent in release
+      // builds unless the host app installed a Logger, which is why the audio
+      // device module's failures were invisible on a real user's phone.
+      // Filtered to the audio path so this stays readable.
+      if ([logMessage containsString:@"audio"] || [logMessage containsString:@"Audio"] ||
+          [logMessage containsString:@"ADM"] || [logMessage containsString:@"RTCAudio"] ||
+          [logMessage containsString:@"VPIO"] || [logMessage containsString:@"record"]) {
+        NSLog(@"[webrtc-audio] %@", logMessage);
+      }
       postEvent(self.eventSink, @{
         @"event" : @"onLogData",
         @"data" : logMessage
@@ -375,8 +384,18 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
 - (void)initialize:(NSArray*)networkIgnoreMask
     bypassVoiceProcessing:(BOOL)bypassVoiceProcessing
                  severity:(RTCLoggingSeverity)severity {
-    // RTCSetMinDebugLogLevel(severity);
-    [self initLoggerCallback:severity];
+    // 2026-08-15 DIAGNOSTIC: WebRTC's own logging was disabled outright (this
+    // line was commented out) and the callback logger only posts to Dart,
+    // which in a release build goes nowhere unless the host app installs a
+    // Logger. So when the microphone silently failed to start, the one layer
+    // that knows why — the audio device module — said nothing, anywhere.
+    //
+    // Default to Warning when the app asks for none, so audio-unit failures
+    // are visible in the device console without drowning it in verbose spam.
+    RTCLoggingSeverity effective =
+        (severity == RTCLoggingSeverityNone) ? RTCLoggingSeverityWarning : severity;
+    RTCSetMinDebugLogLevel(effective);
+    [self initLoggerCallback:effective];
 
     if (!_peerConnectionFactory) {
         VideoDecoderFactory* decoderFactory = [[VideoDecoderFactory alloc] init];
