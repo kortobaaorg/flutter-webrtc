@@ -1,4 +1,5 @@
 #import "FlutterWebRTCPlugin.h"
+#import <os/log.h>
 #import "AudioUtils.h"
 #import "CameraUtils.h"
 
@@ -353,7 +354,10 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
       if ([logMessage containsString:@"audio"] || [logMessage containsString:@"Audio"] ||
           [logMessage containsString:@"ADM"] || [logMessage containsString:@"RTCAudio"] ||
           [logMessage containsString:@"VPIO"] || [logMessage containsString:@"record"]) {
-        NSLog(@"[webrtc-audio] %@", logMessage);
+        // %{public}@ is required: the unified log redacts dynamic string
+        // arguments to <private> by default, so plain NSLog produced 328
+        // lines of "<private>" and told us nothing (2026-08-15).
+        os_log(OS_LOG_DEFAULT, "[webrtc-audio] %{public}@", logMessage);
       }
       postEvent(self.eventSink, @{
         @"event" : @"onLogData",

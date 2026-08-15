@@ -21,17 +21,31 @@
   // Another app's PlayAndRecord is not ours. When we need to record, always
   // apply OUR configuration and, crucially, ACTIVATE the session.
   if (recording) {
-    config.category = AVAudioSessionCategoryPlayAndRecord;
-    config.categoryOptions =
-        AVAudioSessionCategoryOptionAllowBluetooth |
-        AVAudioSessionCategoryOptionAllowBluetoothA2DP |
-        AVAudioSessionCategoryOptionAllowAirPlay;
+    // Only impose the category when it is actually wrong. Re-applying it
+    // unconditionally ALSO re-applies these options, which omit
+    // DefaultToSpeaker — so it silently dragged a call the user had put on
+    // speaker back to the earpiece, and the speaker button then only changed
+    // the earpiece volume. Reported 2026-08-15, caused by this function
+    // losing its category guard earlier the same day.
+    const BOOL categoryIsWrong =
+        session.category != AVAudioSessionCategoryPlayAndRecord &&
+        session.category != AVAudioSessionCategoryMultiRoute;
 
     [session lockForConfiguration];
     NSError* error = nil;
-    bool success = [session setCategory:config.category withOptions:config.categoryOptions error:&error];
-    if (!success)
-      NSLog(@"ensureAudioSessionWithRecording[true]: setCategory failed due to: %@", error);
+    bool success = YES;
+    if (categoryIsWrong) {
+      config.category = AVAudioSessionCategoryPlayAndRecord;
+      // Preserve whatever routing the session already had — notably
+      // DefaultToSpeaker, which the app sets at launch.
+      config.categoryOptions = session.categoryOptions |
+          AVAudioSessionCategoryOptionAllowBluetooth |
+          AVAudioSessionCategoryOptionAllowBluetoothA2DP |
+          AVAudioSessionCategoryOptionAllowAirPlay;
+      success = [session setCategory:config.category withOptions:config.categoryOptions error:&error];
+      if (!success)
+        NSLog(@"ensureAudioSessionWithRecording[true]: setCategory failed due to: %@", error);
+    }
     // 2026-04-20 FIX: guard setMode to avoid -50 paramErr when CallKit already
     // set the mode on incoming calls (Android→iOS callee path).
     if (session.mode != config.mode) {
