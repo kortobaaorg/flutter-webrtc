@@ -9,9 +9,18 @@
   // we also need to set default WebRTC audio configuration, since it may be activated after
   // this method is called
   RTCAudioSessionConfiguration* config = [RTCAudioSessionConfiguration webRTCConfiguration];
-  // require audio session to be either PlayAndRecord or MultiRoute
-  if (recording && session.category != AVAudioSessionCategoryPlayAndRecord &&
-      session.category != AVAudioSessionCategoryMultiRoute) {
+  // 2026-08-15 FIX: this used to run ONLY when the category was not already
+  // PlayAndRecord/MultiRoute. Recording a WhatsApp voice note leaves the session
+  // in PlayAndRecord, so when a call was answered mid-recording the whole block
+  // was skipped: the session kept the other app's options and mode, was never
+  // activated, and the audio unit never started. The teacher was inaudible for
+  // the entire call and nothing recovered it — not rejoining, not killing the
+  // other app, not a network switch. Reproduced 3/3; the good calls showed 16
+  // audio-session transitions at setup, the bad ones 4.
+  //
+  // Another app's PlayAndRecord is not ours. When we need to record, always
+  // apply OUR configuration and, crucially, ACTIVATE the session.
+  if (recording) {
     config.category = AVAudioSessionCategoryPlayAndRecord;
     config.categoryOptions =
         AVAudioSessionCategoryOptionAllowBluetooth |
@@ -30,6 +39,16 @@
       if (!success)
         NSLog(@"ensureAudioSessionWithRecording[true]: setMode failed due to: %@", error);
     }
+    // Activation is the half that was missing entirely. A correctly-categorised
+    // but inactive session is exactly what the silent calls had. A failure here
+    // is logged rather than fatal — the CallKit incoming path can legitimately
+    // return -50 and the call must still proceed.
+    success = [session setActive:YES error:&error];
+    if (!success)
+      NSLog(@"ensureAudioSessionWithRecording[true]: setActive failed due to: %@", error);
+    else
+      NSLog(@"ensureAudioSessionWithRecording[true]: session active, category=%@ mode=%@",
+            session.category, session.mode);
     [session unlockForConfiguration];
   } else if (!recording && (session.category == AVAudioSessionCategoryAmbient ||
                             session.category == AVAudioSessionCategorySoloAmbient)) {

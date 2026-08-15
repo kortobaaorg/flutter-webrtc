@@ -264,6 +264,16 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
                                            selector:@selector(didSessionRouteChange:)
                                                name:AVAudioSessionRouteChangeNotification
                                              object:session];
+  // 2026-08-15 FIX (2/3): when another app was recording (a WhatsApp voice
+  // note) and a call is answered, that app's session is interrupted and handed
+  // back to us — but nothing re-established OUR session, so the audio unit
+  // never started and the call was silent in both directions for its whole
+  // life. Reacting to the interruption ending is the Apple-sanctioned hook for
+  // exactly this hand-back.
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(didSessionInterruption:)
+                                               name:AVAudioSessionInterruptionNotification
+                                             object:session];
 #endif
 
   // Observe audio device module events.
@@ -309,6 +319,26 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
        routeChangeReason == AVAudioSessionRouteChangeReasonOverride)) {
     postEvent(self.eventSink, @{@"event" : @"onDeviceChange"});
   }
+#endif
+}
+
+// 2026-08-15 FIX (2/3): re-establish our audio session when an interruption
+// ends. See the observer registration in init for the full story.
+- (void)didSessionInterruption:(NSNotification*)notification {
+#if TARGET_OS_IPHONE
+  NSUInteger type =
+      [[notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+  if (type == AVAudioSessionInterruptionTypeBegan) {
+    NSLog(@"didSessionInterruption: began");
+    return;
+  }
+  if (!self.audioSessionManagementEnabled) {
+    NSLog(@"didSessionInterruption: ended, but audio session management is disabled");
+    return;
+  }
+  BOOL recording = [self hasLocalAudioTrack];
+  NSLog(@"didSessionInterruption: ended — re-ensuring audio session (recording=%d)", recording);
+  [AudioUtils ensureAudioSessionWithRecording:recording];
 #endif
 }
 
