@@ -57,7 +57,20 @@
     // but inactive session is exactly what the silent calls had. A failure here
     // is logged rather than fatal — the CallKit incoming path can legitimately
     // return -50 and the call must still proceed.
-    success = [session setActive:YES error:&error];
+    //
+    // ONLY when not already active. RTCAudioSession refcounts activation
+    // (incrementActivationCount) and only truly deactivates when the count
+    // returns to zero. Calling this unconditionally — as this did when the
+    // capture watchdog retried — drove "Number of current activations" to 9-10
+    // on a single call, so the session could never be released. Observed on
+    // device 2026-08-15; the leak was introduced by this very fix earlier the
+    // same day.
+    if (!session.isActive) {
+      success = [session setActive:YES error:&error];
+    } else {
+      success = YES;
+      NSLog(@"ensureAudioSessionWithRecording[true]: already active, not re-activating");
+    }
     if (!success)
       NSLog(@"ensureAudioSessionWithRecording[true]: setActive failed due to: %@", error);
     else
