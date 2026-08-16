@@ -347,21 +347,6 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
   if(loggerCallback == nil) {
     loggerCallback = [RTC_OBJC_TYPE(RTCCallbackLogger) new];
     [loggerCallback start:^(NSString *logMessage) {
-      // Also emit to the device console. The Dart sink is silent in release
-      // builds unless the host app installed a Logger, which is why the audio
-      // device module's failures were invisible on a real user's phone.
-      // Filtered to the audio path so this stays readable.
-      if ([logMessage containsString:@"audio"] || [logMessage containsString:@"Audio"] ||
-          [logMessage containsString:@"ADM"] || [logMessage containsString:@"RTCAudio"] ||
-          [logMessage containsString:@"VPIO"] || [logMessage containsString:@"record"] ||
-          [logMessage containsString:@"Record"] || [logMessage containsString:@"REC"] ||
-          [logMessage containsString:@"voice_processing"] || [logMessage containsString:@"InitRecording"] ||
-          [logMessage containsString:@"StartRecording"] || [logMessage containsString:@"mic"]) {
-        // %{public}@ is required: the unified log redacts dynamic string
-        // arguments to <private> by default, so plain NSLog produced 328
-        // lines of "<private>" and told us nothing (2026-08-15).
-        os_log(OS_LOG_DEFAULT, "[webrtc-audio] %{public}@", logMessage);
-      }
       postEvent(self.eventSink, @{
         @"event" : @"onLogData",
         @"data" : logMessage
@@ -391,22 +376,16 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
 - (void)initialize:(NSArray*)networkIgnoreMask
     bypassVoiceProcessing:(BOOL)bypassVoiceProcessing
                  severity:(RTCLoggingSeverity)severity {
-    // 2026-08-15 DIAGNOSTIC: WebRTC's own logging was disabled outright (this
-    // line was commented out) and the callback logger only posts to Dart,
-    // which in a release build goes nowhere unless the host app installs a
-    // Logger. So when the microphone silently failed to start, the one layer
-    // that knows why — the audio device module — said nothing, anywhere.
+    // WebRTC's own logging follows the severity the app asks for.
     //
-    // Default to Warning when the app asks for none, so audio-unit failures
-    // are visible in the device console without drowning it in verbose spam.
-    // Info, not Warning: at Warning the audio device module only emits its
-    // periodic PLAY/REC statistics, which say nothing about why capture never
-    // started. The start/stop sequence and its failures are logged at Info.
-    // The console filter below keeps this to the audio path only.
-    RTCLoggingSeverity effective =
-        (severity == RTCLoggingSeverityNone) ? RTCLoggingSeverityInfo : severity;
-    RTCSetMinDebugLogLevel(effective);
-    [self initLoggerCallback:effective];
+    // It was raised to Info during the 2026-08-15/16 investigation into the
+    // microphone failing to start (AudioEngineDevice::ModifyEngineState
+    // returning -9001), because this layer had no logging at all and the
+    // failure was invisible. Turn it back up the same way if that ever needs
+    // revisiting — but not by default: it is noisy, and logging changes
+    // timing on what turned out to be a race.
+    RTCSetMinDebugLogLevel(severity);
+    [self initLoggerCallback:severity];
 
     if (!_peerConnectionFactory) {
         VideoDecoderFactory* decoderFactory = [[VideoDecoderFactory alloc] init];
