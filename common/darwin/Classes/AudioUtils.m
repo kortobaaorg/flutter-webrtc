@@ -114,49 +114,123 @@
   return NO;
 }
 
+/// The last speaker preference the app actually asked for, so it can be
+/// re-asserted after the system moves the route out from under us.
+///
+/// `overrideOutputAudioPort` is transient: it is dropped by a route change, by
+/// an interruption, and by the session going inactive. Nothing here used to
+/// remember what had been requested, so once iOS moved the call to the
+/// receiver the override was simply gone and the app had no way to know the
+/// route no longer matched the speaker button on screen.
+static BOOL kSpeakerPreferenceRecorded = NO;
+static BOOL kSpeakerPreferenceOn = NO;
+
 + (void)setSpeakerphoneOn:(BOOL)enable {
-  RTCAudioSession* session = [RTCAudioSession sharedInstance];
   RTCAudioSessionConfiguration* config = [RTCAudioSessionConfiguration webRTCConfiguration];
-    
+
   if(enable && config.category != AVAudioSessionCategoryPlayAndRecord) {
     NSLog(@"setSpeakerphoneOn: Category option 'defaultToSpeaker' is only applicable with category 'playAndRecord', ignore.");
     return;
   }
 
+  kSpeakerPreferenceRecorded = YES;
+  kSpeakerPreferenceOn = enable;
+  [self applySpeakerphoneOn:enable];
+}
+
+/// Re-assert whatever was last requested through [setSpeakerphoneOn:].
+///
+/// A no-op until the app has expressed a preference — before that the session
+/// should keep whatever route the system chose.
++ (void)reapplySpeakerPreference {
+  if (!kSpeakerPreferenceRecorded) {
+    return;
+  }
+  NSLog(@"reapplySpeakerPreference: re-asserting speaker=%@", kSpeakerPreferenceOn ? @"YES" : @"NO");
+  [self applySpeakerphoneOn:kSpeakerPreferenceOn];
+}
+
+/// YES when the current output route matches [enable].
++ (BOOL)routeMatchesSpeakerphoneOn:(BOOL)enable session:(RTCAudioSession*)session {
+  BOOL onBuiltInSpeaker = NO;
+  for (AVAudioSessionPortDescription* output in session.session.currentRoute.outputs) {
+    if ([output.portType isEqualToString:AVAudioSessionPortBuiltInSpeaker]) {
+      onBuiltInSpeaker = YES;
+      break;
+    }
+  }
+  return onBuiltInSpeaker == enable;
+}
+
+/// Apply the route and verify it landed, retrying up to three times.
+///
+/// The old implementation set the category, called `overrideOutputAudioPort:`
+/// and returned — it never activated the session and never checked the
+/// resulting route. An override applied while the session is inactive is
+/// silently dropped, which is why the speaker button could report success and
+/// change nothing but the volume. Verifying against `currentRoute` is the only
+/// way to know; the error out-parameter reports the call, not the outcome.
++ (void)applySpeakerphoneOn:(BOOL)enable {
+  RTCAudioSession* session = [RTCAudioSession sharedInstance];
+  RTCAudioSessionConfiguration* config = [RTCAudioSessionConfiguration webRTCConfiguration];
+
   [session lockForConfiguration];
   NSError* error = nil;
-  if (!enable) {
-    // 2026-04-20 FIX: guard setMode — skip if already correct mode.
-    if (session.mode != config.mode) {
-      [session setMode:config.mode error:&error];
-    }
-    BOOL success = [session setCategory:config.category
-                            withOptions:AVAudioSessionCategoryOptionAllowAirPlay |
-                                        AVAudioSessionCategoryOptionAllowBluetoothA2DP |
-                                        AVAudioSessionCategoryOptionAllowBluetooth
-                                  error:&error];
 
-    success = [session.session overrideOutputAudioPort:kAudioSessionOverrideAudioRoute_None
-                                                 error:&error];
-    if (!success)
-      NSLog(@"setSpeakerphoneOn: Port override failed due to: %@", error);
-  } else {
-    // 2026-04-20 FIX: guard setMode — skip if already correct mode.
-    if (session.mode != config.mode) {
-      [session setMode:config.mode error:&error];
-    }
-    BOOL success = [session setCategory:config.category
-                            withOptions:AVAudioSessionCategoryOptionDefaultToSpeaker |
-                                        AVAudioSessionCategoryOptionAllowAirPlay |
-                                        AVAudioSessionCategoryOptionAllowBluetoothA2DP |
-                                        AVAudioSessionCategoryOptionAllowBluetooth
-                                  error:&error];
-
-    success = [session overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker
-                                         error:&error];
-    if (!success)
-      NSLog(@"setSpeakerphoneOn: Port override failed due to: %@", error);
+  // 2026-04-20 FIX: guard setMode — skip if already correct mode.
+  if (session.mode != config.mode) {
+    [session setMode:config.mode error:&error];
   }
+
+  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionAllowAirPlay |
+                                          AVAudioSessionCategoryOptionAllowBluetoothA2DP |
+                                          AVAudioSessionCategoryOptionAllowBluetooth;
+  if (enable) {
+    options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
+  }
+  if (![session setCategory:config.category withOptions:options error:&error]) {
+    NSLog(@"applySpeakerphoneOn: setCategory failed due to: %@", error);
+  }
+
+  AVAudioSessionPortOverride override =
+      enable ? AVAudioSessionPortOverrideSpeaker : AVAudioSessionPortOverrideNone;
+
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    error = nil;
+    if (![session overrideOutputAudioPort:override error:&error]) {
+      NSLog(@"applySpeakerphoneOn: port override attempt %d failed due to: %@", attempt, error);
+    }
+
+    if ([self routeMatchesSpeakerphoneOn:enable session:session]) {
+      if (attempt > 1) {
+        NSLog(@"applySpeakerphoneOn: route settled on attempt %d (speaker=%@)", attempt,
+              enable ? @"YES" : @"NO");
+      }
+      break;
+    }
+
+    // The override did not take. The usual reason is an inactive session — an
+    // override only applies to a running route. Activate and try again.
+    //
+    // Guarded on isActive deliberately: RTCAudioSession refcounts activation,
+    // and an unconditional setActive:YES here leaks a count on every call. One
+    // call on 2026-08-15 was observed at an activation count of 9.
+    if (!session.isActive) {
+      error = nil;
+      if (![session setActive:YES error:&error]) {
+        NSLog(@"applySpeakerphoneOn: setActive failed due to: %@", error);
+        break;
+      }
+      continue;
+    }
+
+    if (attempt == 3) {
+      NSLog(@"applySpeakerphoneOn: route still does not match after 3 attempts "
+            @"(wanted speaker=%@, current route=%@)",
+            enable ? @"YES" : @"NO", session.session.currentRoute.outputs);
+    }
+  }
+
   [session unlockForConfiguration];
 }
 

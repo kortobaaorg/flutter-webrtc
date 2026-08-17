@@ -320,6 +320,22 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
        routeChangeReason == AVAudioSessionRouteChangeReasonOverride)) {
     postEvent(self.eventSink, @{@"event" : @"onDeviceChange"});
   }
+
+  // 2026-08-17: re-assert the app's speaker preference after the system moves
+  // the route. `overrideOutputAudioPort` is transient — a category change or a
+  // device appearing/disappearing wipes it, and the call silently drops back
+  // to the receiver while the speaker button on screen still looks engaged.
+  //
+  // Deliberately NOT on ...ReasonOverride: that is the reason fired by our own
+  // override, so re-applying on it would be a feedback loop. Also not on
+  // ...ReasonRouteConfigurationChange, which fires for volume and port
+  // configuration churn during a call.
+  if (self.audioSessionManagementEnabled &&
+      (routeChangeReason == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
+       routeChangeReason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable ||
+       routeChangeReason == AVAudioSessionRouteChangeReasonCategoryChange)) {
+    [AudioUtils reapplySpeakerPreference];
+  }
 #endif
 }
 
@@ -340,6 +356,11 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
   BOOL recording = [self hasLocalAudioTrack];
   NSLog(@"didSessionInterruption: ended — re-ensuring audio session (recording=%d)", recording);
   [AudioUtils ensureAudioSessionWithRecording:recording];
+  // Restoring the category is not enough. The port override does not survive
+  // an interruption, so a call that comes back from a phone call or a Siri
+  // request returns on the receiver even though the user chose the
+  // loudspeaker. Put the route back where they left it.
+  [AudioUtils reapplySpeakerPreference];
 #endif
 }
 
