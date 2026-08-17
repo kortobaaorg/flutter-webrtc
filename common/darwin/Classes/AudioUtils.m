@@ -188,8 +188,16 @@ static BOOL kSpeakerPreferenceOn = NO;
   if (enable) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
-  if (![session setCategory:config.category withOptions:options error:&error]) {
-    NSLog(@"applySpeakerphoneOn: setCategory failed due to: %@", error);
+  // Only when it differs. Every setCategory raises an
+  // AVAudioSessionRouteChangeReasonCategoryChange, and this function is itself
+  // called from a route-change handler — re-applying an already-correct
+  // category is how this became a self-sustaining loop on 2026-08-17. The
+  // essential half of the re-assert is the port override below; the category is
+  // only here for DefaultToSpeaker.
+  if (session.category != config.category || session.categoryOptions != options) {
+    if (![session setCategory:config.category withOptions:options error:&error]) {
+      NSLog(@"applySpeakerphoneOn: setCategory failed due to: %@", error);
+    }
   }
 
   AVAudioSessionPortOverride override =

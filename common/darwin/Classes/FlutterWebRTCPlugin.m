@@ -330,10 +330,17 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
   // override, so re-applying on it would be a feedback loop. Also not on
   // ...ReasonRouteConfigurationChange, which fires for volume and port
   // configuration churn during a call.
+  //
+  // 2026-08-17 (same day, later): ...ReasonCategoryChange was removed for the
+  // same reason and is the twin that was missed. `applySpeakerphoneOn` calls
+  // `setCategory`, which raises a CategoryChange route change, which re-entered
+  // here — 4,270,979 audiomxd messages in 383s (~11,150/sec), two WATCHDOG kills
+  // of audiomxd, and a frozen device. A re-entrancy flag around the re-apply
+  // does NOT close this: the notification is delivered asynchronously, long
+  // after the call returns. The trigger set is the only place to break it.
   if (self.audioSessionManagementEnabled &&
       (routeChangeReason == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
-       routeChangeReason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable ||
-       routeChangeReason == AVAudioSessionRouteChangeReasonCategoryChange)) {
+       routeChangeReason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)) {
     [AudioUtils reapplySpeakerPreference];
   }
 #endif
