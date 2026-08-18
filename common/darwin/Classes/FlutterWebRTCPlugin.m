@@ -291,6 +291,21 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
     peerConnection.eventSink = nil;
   }
   _eventSink = nil;
+#if TARGET_OS_IPHONE
+  // 2026-08-18 FIX: `init` adds two AVAudioSession observers and nothing ever
+  // removed them. `registerWithRegistrar:` builds a NEW instance per engine, and
+  // this app spawns a headless engine per initMeeting and per rejoin, so a long
+  // call accumulated a pair of observers per engine. Every route change then ran
+  // didSessionRouteChange: N times over N plugin instances — each one re-asserting
+  // the audio configuration — which is the observer storm behind the repeated
+  // category rewrites during a call.
+  //
+  // Removing here (engine teardown) rather than only in dealloc is deliberate:
+  // the instance is retained by the registrar's method-call delegate list, so its
+  // dealloc is not guaranteed to be prompt. `removeObserver:` is idempotent, so
+  // the dealloc backstop below is harmless.
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+#endif
 }
 
 #pragma mark - FlutterStreamHandler methods
@@ -1919,6 +1934,11 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
 }
 
 - (void)dealloc {
+  // Backstop for the observers added in `init` — see detachFromEngineForRegistrar:.
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  // The ADM holds this instance as its observer; leaving it set means a module
+  // that outlives the plugin calls back into freed memory.
+  _peerConnectionFactory.audioDeviceModule.observer = nil;
   [_localTracks removeAllObjects];
   _localTracks = nil;
   [_localStreams removeAllObjects];
