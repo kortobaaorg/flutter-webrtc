@@ -1,5 +1,6 @@
 #import "FlutterWebRTCPlugin.h"
 #import <os/log.h>
+#import <stdatomic.h>
 #import "AudioUtils.h"
 #import "CameraUtils.h"
 
@@ -18,6 +19,58 @@
 #import "FlutterRTCVideoPlatformViewController.h"
 #endif
 #import "AudioManager.h"
+
+#if TARGET_OS_IPHONE
+/// The one queue every AVAudioSession write goes through.
+///
+/// Reconfiguring a live PlayAndRecord session while WebRTC's audio engine is
+/// running costs iOS roughly 800ms, synchronously, inside a single
+/// `setCategory`. Measured on device 2026-09-05 (iPhone 16, iOS 26.6): 20
+/// genuine route switches accounted for 13.4s of blocked UI -- 96% of all
+/// remaining main-thread block -- at ~800ms to the earpiece and ~600ms to the
+/// speaker, with zero retries. It is iOS's cost, not ours, and on a real switch
+/// the write genuinely has to happen. The only way it stops freezing the UI is
+/// to stop making it on the UI thread.
+///
+/// SERIAL, never concurrent. `AudioRouteKeeper.applyRoute` issues
+/// `setAppleAudioConfiguration` and then `setSpeakerphoneOn` and depends on
+/// that order; a concurrent queue would let the second overtake the first and
+/// leave the route contradicting the category.
+///
+/// The Flutter `result` callback is invoked on the main queue after the work
+/// completes, so the Dart `await` still means what it says -- it is no longer
+/// blocking the UI thread while it waits, which is the entire point.
+/// Generation counters used to drop superseded audio-session work.
+///
+/// Because the queue is serial and each write costs iOS ~800ms, a burst of
+/// switches piles up: measured 2026-09-05, 16 writes totalling ~11s inside a
+/// 14s window, back-to-back with no idle gap, and 106 Dart calls producing 60
+/// executed writes. The UI no longer freezes, but a switch can apply a second
+/// late because it waits behind work whose result is already obsolete.
+///
+/// Only the most recent request per method decides the final state, so an
+/// enqueued block whose generation is no longer current can be skipped
+/// entirely.
+///
+/// Counted PER METHOD, deliberately not globally. `AudioRouteKeeper.applyRoute`
+/// issues `setAppleAudioConfiguration` and then `setSpeakerphoneOn` as a pair;
+/// a single shared counter would let a newer configuration cancel the pending
+/// speakerphone half of the previous pair and leave the route contradicting the
+/// category. Per-method counters drop the stale half of each pair independently
+/// and always run the newest of each, so the final state still converges.
+static _Atomic(uint64_t) gAppleAudioConfigurationGeneration = 0;
+static _Atomic(uint64_t) gSpeakerphoneGeneration = 0;
+
+static dispatch_queue_t FlutterWebRTCAudioSessionQueue(void) {
+  static dispatch_queue_t queue;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    queue = dispatch_queue_create("com.kortobaa.flutter_webrtc.audio_session",
+                                  DISPATCH_QUEUE_SERIAL);
+  });
+  return queue;
+}
+#endif
 
 #import <AVFoundation/AVFoundation.h>
 #import <WebRTC/RTCFieldTrials.h>
@@ -1289,10 +1342,29 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
     _speakerOn = enable.boolValue;
     _speakerOnButPreferBluetooth = NO;
     if (self.audioSessionManagementEnabled) {
-      [AudioUtils setSpeakerphoneOn:_speakerOn];
-      postEvent(self.eventSink, @{@"event" : @"onDeviceChange"});
+      const BOOL speakerOn = _speakerOn;
+      const uint64_t generation =
+          atomic_fetch_add(&gSpeakerphoneGeneration, 1) + 1;
+      __weak __typeof(self) weakSelf = self;
+      dispatch_async(FlutterWebRTCAudioSessionQueue(), ^{
+        const BOOL superseded =
+            atomic_load(&gSpeakerphoneGeneration) != generation;
+        if (!superseded) {
+          [AudioUtils setSpeakerphoneOn:speakerOn];
+        } else {
+          NSLog(@"[MAQ-AUDIO] skip site=setSpeakerphoneOn reason=superseded");
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+          __typeof(self) strongSelf = weakSelf;
+          if (strongSelf != nil && !superseded) {
+            postEvent(strongSelf.eventSink, @{@"event" : @"onDeviceChange"});
+          }
+          result(nil);
+        });
+      });
+    } else {
+      result(nil);
     }
-    result(nil);
   }
   else if ([@"ensureAudioSession" isEqualToString:call.method]) {
     [self ensureAudioSession];
@@ -1302,17 +1374,35 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
     _speakerOn = YES;
     _speakerOnButPreferBluetooth = YES;
     if (self.audioSessionManagementEnabled) {
-      [AudioUtils setSpeakerphoneOnButPreferBluetooth];
+      dispatch_async(FlutterWebRTCAudioSessionQueue(), ^{
+        [AudioUtils setSpeakerphoneOnButPreferBluetooth];
+        dispatch_async(dispatch_get_main_queue(), ^{
+          result(nil);
+        });
+      });
+    } else {
+      result(nil);
     }
-    result(nil);
   }
   else if([@"setAppleAudioConfiguration" isEqualToString:call.method]) {
     NSDictionary* argsMap = call.arguments;
     NSDictionary* configuration = argsMap[@"configuration"];
     if (self.audioSessionManagementEnabled) {
-      [AudioUtils setAppleAudioConfiguration:configuration];
+      const uint64_t generation =
+          atomic_fetch_add(&gAppleAudioConfigurationGeneration, 1) + 1;
+      dispatch_async(FlutterWebRTCAudioSessionQueue(), ^{
+        if (atomic_load(&gAppleAudioConfigurationGeneration) == generation) {
+          [AudioUtils setAppleAudioConfiguration:configuration];
+        } else {
+          NSLog(@"[MAQ-AUDIO] skip site=setAppleAudioConfiguration reason=superseded");
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+          result(nil);
+        });
+      });
+    } else {
+      result(nil);
     }
-    result(nil);
   }
 #endif
   else if ([@"getLocalDescription" isEqualToString:call.method]) {
