@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../utils.dart';
 
 enum AppleAudioMode {
@@ -114,10 +116,30 @@ class AppleNativeAudioManagement {
   static Future<void> setAppleAudioConfiguration(
       AppleAudioConfiguration config) async {
     if (WebRTC.platformIsIOS) {
+      // MAQ-AUDIO DIAGNOSTIC PROBE — TEMPORARY, DO NOT SHIP.
+      // O4: every Dart-side AVAudioSession category write funnels through here.
+      // The stack names the exact Dart caller, so no writer has to be inferred
+      // from a matching option set. Uses dart:developer, not debugPrint, because
+      // Sentry swallows debugPrint in non-debug builds.
+      // debugPrint, NOT dart:developer.log — log() goes to the VM service
+      // Logging stream and never reaches `flutter run` stdout, so it produced
+      // zero lines on the first attempt. Sentry's DebugPrintIntegration is
+      // disabled in main.dart (`enablePrintBreadcrumbs = false`), so
+      // debugPrint really does print here.
+      debugPrint(
+        '[MAQ-AUDIO-DART] setAppleAudioConfiguration '
+        'cat=${config.appleAudioCategory?.name} '
+        'opts=${config.appleAudioCategoryOptions?.map((o) => o.name).join('|')} '
+        'mode=${config.appleAudioMode?.name}\n'
+        '${StackTrace.current}',
+      );
+      final sw = Stopwatch()..start();
       await WebRTC.invokeMethod(
         'setAppleAudioConfiguration',
         <String, dynamic>{'configuration': config.toMap()},
       );
+      debugPrint('[MAQ-AUDIO-DART] setAppleAudioConfiguration returned in '
+          '${sw.elapsedMilliseconds}ms');
     }
   }
 }
