@@ -122,21 +122,8 @@ class Helper {
 
   /// Enable or disable speakerphone
   /// for iOS/Android only
-  static Future<void> setSpeakerphoneOn(bool enable) {
-    // MAQ-AUDIO DIAGNOSTIC PROBE — TEMPORARY, DO NOT SHIP.
-    // O4: this is the writer that strips `defaultToSpeaker` ~200ms after
-    // something else sets it, producing the loudspeaker blip. The stack names
-    // the Dart caller.
-    debugPrint('[MAQ-AUDIO-DART] setSpeakerphoneOn enable=$enable\n'
-        '${StackTrace.current}');
-    // Times the platform-channel round trip. The UI thread is what services
-    // the channel on the native side, so a large value here IS the freeze.
-    final sw = Stopwatch()..start();
-    return NativeAudioManagement.setSpeakerphoneOn(enable).whenComplete(() {
-      debugPrint('[MAQ-AUDIO-DART] setSpeakerphoneOn returned in '
-          '${sw.elapsedMilliseconds}ms');
-    });
-  }
+  static Future<void> setSpeakerphoneOn(bool enable) =>
+      NativeAudioManagement.setSpeakerphoneOn(enable);
 
   /// Ensure audio session
   /// for iOS only

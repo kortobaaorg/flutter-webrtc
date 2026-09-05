@@ -1,105 +1,10 @@
 #if TARGET_OS_IPHONE
 #import "AudioUtils.h"
 #import <AVFoundation/AVFoundation.h>
-#import <UIKit/UIKit.h>
-
-// ---------------------------------------------------------------------------
-// MAQ-AUDIO DIAGNOSTIC PROBE — TEMPORARY, DO NOT SHIP.
-//
-// O4: prove which code writes the AVAudioSession category when the call window
-// is minimised. Every setCategory in this file is tagged with its site and a
-// call stack. A category change seen by the probe WITHOUT a preceding
-// `write site=` line did not come from this file — it came from WebRTC's audio
-// device module or from the system.
-// ---------------------------------------------------------------------------
-static NSString* MaqOptString(AVAudioSessionCategoryOptions o) {
-  NSMutableArray* parts = [NSMutableArray array];
-  if (o & AVAudioSessionCategoryOptionMixWithOthers) [parts addObject:@"mixWithOthers"];
-  if (o & AVAudioSessionCategoryOptionDuckOthers) [parts addObject:@"duckOthers"];
-  if (o & AVAudioSessionCategoryOptionAllowBluetooth) [parts addObject:@"allowBluetooth"];
-  if (o & AVAudioSessionCategoryOptionAllowBluetoothA2DP) [parts addObject:@"allowBluetoothA2DP"];
-  if (o & AVAudioSessionCategoryOptionAllowAirPlay) [parts addObject:@"allowAirPlay"];
-  if (o & AVAudioSessionCategoryOptionDefaultToSpeaker) [parts addObject:@"defaultToSpeaker"];
-  return parts.count ? [parts componentsJoinedByString:@"|"] : @"none";
-}
-
-static NSString* MaqCurrentOutputs(void) {
-  NSMutableArray* names = [NSMutableArray array];
-  for (AVAudioSessionPortDescription* p in
-       [AVAudioSession sharedInstance].currentRoute.outputs) {
-    [names addObject:p.portType];
-  }
-  return names.count ? [names componentsJoinedByString:@","] : @"none";
-}
-
-static CFAbsoluteTime MaqNow(void) { return CFAbsoluteTimeGetCurrent(); }
-
-// Times a native audio-session block and flags anything that would be felt as a
-// freeze. Runs on whatever thread the caller is on; `main=1` means the UI
-// thread was blocked for this long.
-static void MaqLogAudioSpan(NSString* site, CFAbsoluteTime start) {
-  double ms = (MaqNow() - start) * 1000.0;
-  NSLog(@"[MAQ-AUDIO] span site=%@ ms=%.1f main=%d%@", site, ms,
-        [NSThread isMainThread] ? 1 : 0, ms >= 100.0 ? @" SLOW" : @"");
-}
-
-static void MaqLogAudioWrite(NSString* site, AVAudioSessionCategoryOptions options) {
-  NSArray* stack = [NSThread callStackSymbols];
-  NSUInteger n = MIN((NSUInteger)14, stack.count);
-  NSLog(@"[MAQ-AUDIO] write site=%@ opts=%@ out=%@\n[MAQ-AUDIO] stack=\n%@", site,
-        MaqOptString(options), MaqCurrentOutputs(),
-        [[stack subarrayWithRange:NSMakeRange(0, n)] componentsJoinedByString:@"\n"]);
-}
-
-static NSString* MaqRouteChangeReason(NSUInteger reason) {
-  switch (reason) {
-    case AVAudioSessionRouteChangeReasonNewDeviceAvailable: return @"newDevice";
-    case AVAudioSessionRouteChangeReasonOldDeviceUnavailable: return @"oldDeviceGone";
-    case AVAudioSessionRouteChangeReasonCategoryChange: return @"categoryChange";
-    case AVAudioSessionRouteChangeReasonOverride: return @"override";
-    case AVAudioSessionRouteChangeReasonWakeFromSleep: return @"wake";
-    case AVAudioSessionRouteChangeReasonNoSuitableRouteForCategory: return @"noSuitableRoute";
-    case AVAudioSessionRouteChangeReasonRouteConfigurationChange: return @"routeConfigChange";
-    default: return @"unknown";
-  }
-}
-
-void MaqInstallAudioProbe(void);
-void MaqInstallAudioProbe(void) {
-  static dispatch_once_t once;
-  dispatch_once(&once, ^{
-    NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
-    [nc addObserverForName:AVAudioSessionRouteChangeNotification
-                    object:nil
-                     queue:nil
-                usingBlock:^(NSNotification* note) {
-                  AVAudioSession* s = [AVAudioSession sharedInstance];
-                  NSLog(@"[MAQ-AUDIO] route reason=%@ cat=%@ opts=%@ mode=%@ out=%@",
-                        MaqRouteChangeReason([note.userInfo[AVAudioSessionRouteChangeReasonKey]
-                                                 unsignedIntegerValue]),
-                        s.category, MaqOptString(s.categoryOptions), s.mode,
-                        MaqCurrentOutputs());
-                }];
-    [nc addObserverForName:UIApplicationDidEnterBackgroundNotification
-                    object:nil
-                     queue:nil
-                usingBlock:^(NSNotification* note) {
-                  NSLog(@"[MAQ-AUDIO] lifecycle=background out=%@", MaqCurrentOutputs());
-                }];
-    [nc addObserverForName:UIApplicationWillEnterForegroundNotification
-                    object:nil
-                     queue:nil
-                usingBlock:^(NSNotification* note) {
-                  NSLog(@"[MAQ-AUDIO] lifecycle=foreground out=%@", MaqCurrentOutputs());
-                }];
-    NSLog(@"[MAQ-AUDIO] probe installed");
-  });
-}
 
 @implementation AudioUtils
 
 + (void)ensureAudioSessionWithRecording:(BOOL)recording {
-  MaqInstallAudioProbe();
   RTCAudioSession* session = [RTCAudioSession sharedInstance];
   // we also need to set default WebRTC audio configuration, since it may be activated after
   // this method is called
@@ -137,7 +42,6 @@ void MaqInstallAudioProbe(void) {
           AVAudioSessionCategoryOptionAllowBluetooth |
           AVAudioSessionCategoryOptionAllowBluetoothA2DP |
           AVAudioSessionCategoryOptionAllowAirPlay;
-      MaqLogAudioWrite(@"ensureAudioSessionWithRecording", config.categoryOptions);
       success = [session setCategory:config.category withOptions:config.categoryOptions error:&error];
       if (!success)
         NSLog(@"ensureAudioSessionWithRecording[true]: setCategory failed due to: %@", error);
@@ -267,7 +171,6 @@ static BOOL kSpeakerPreferenceOn = NO;
 /// change nothing but the volume. Verifying against `currentRoute` is the only
 /// way to know; the error out-parameter reports the call, not the outcome.
 + (void)applySpeakerphoneOn:(BOOL)enable {
-  const CFAbsoluteTime maqStart = MaqNow();
   RTCAudioSession* session = [RTCAudioSession sharedInstance];
   RTCAudioSessionConfiguration* config = [RTCAudioSessionConfiguration webRTCConfiguration];
 
@@ -300,7 +203,6 @@ static BOOL kSpeakerPreferenceOn = NO;
       session.categoryOptions == options &&
       [session.mode isEqualToString:config.mode] &&
       [self routeMatchesSpeakerphoneOn:enable session:session]) {
-    MaqLogAudioSpan(@"applySpeakerphoneOn[skipped]", maqStart);
     return;
   }
 
@@ -318,7 +220,6 @@ static BOOL kSpeakerPreferenceOn = NO;
   // essential half of the re-assert is the port override below; the category is
   // only here for DefaultToSpeaker.
   if (session.category != config.category || session.categoryOptions != options) {
-    MaqLogAudioWrite(@"applySpeakerphoneOn", options);
     if (![session setCategory:config.category withOptions:options error:&error]) {
       NSLog(@"applySpeakerphoneOn: setCategory failed due to: %@", error);
     }
@@ -364,7 +265,6 @@ static BOOL kSpeakerPreferenceOn = NO;
   }
 
   [session unlockForConfiguration];
-  MaqLogAudioSpan(@"applySpeakerphoneOn", maqStart);
 }
 
 + (void)setSpeakerphoneOnButPreferBluetooth {
@@ -376,11 +276,6 @@ static BOOL kSpeakerPreferenceOn = NO;
   if (session.mode != config.mode) {
     [session setMode:config.mode error:&error];
   }
-  MaqLogAudioWrite(@"setSpeakerphoneOnButPreferBluetooth",
-                   AVAudioSessionCategoryOptionAllowAirPlay |
-                       AVAudioSessionCategoryOptionAllowBluetoothA2DP |
-                       AVAudioSessionCategoryOptionAllowBluetooth |
-                       AVAudioSessionCategoryOptionDefaultToSpeaker);
   BOOL success = [session setCategory:config.category
                           withOptions:AVAudioSessionCategoryOptionAllowAirPlay |
                                       AVAudioSessionCategoryOptionAllowBluetoothA2DP |
@@ -457,8 +352,6 @@ static BOOL kSpeakerPreferenceOn = NO;
 }
 
 + (void) setAppleAudioConfiguration:(NSDictionary*)configuration {
-  const CFAbsoluteTime maqStart = MaqNow();
-  MaqInstallAudioProbe();
   RTCAudioSession* session = [RTCAudioSession sharedInstance];
   RTCAudioSessionConfiguration* config = [RTCAudioSessionConfiguration webRTCConfiguration];
 
@@ -518,7 +411,6 @@ static BOOL kSpeakerPreferenceOn = NO;
     // of which set the session to what it already was.
     if (![session.category isEqualToString:config.category] ||
         session.categoryOptions != config.categoryOptions) {
-      MaqLogAudioWrite(@"setAppleAudioConfiguration", config.categoryOptions);
       [session setCategory:config.category withOptions:config.categoryOptions error:nil];
     }
   }
@@ -532,7 +424,6 @@ static BOOL kSpeakerPreferenceOn = NO;
   }
 
   [session unlockForConfiguration];
-  MaqLogAudioSpan(@"setAppleAudioConfiguration", maqStart);
 
 }
 

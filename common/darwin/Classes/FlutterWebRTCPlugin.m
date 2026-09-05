@@ -1351,8 +1351,6 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
             atomic_load(&gSpeakerphoneGeneration) != generation;
         if (!superseded) {
           [AudioUtils setSpeakerphoneOn:speakerOn];
-        } else {
-          NSLog(@"[MAQ-AUDIO] skip site=setSpeakerphoneOn reason=superseded");
         }
         dispatch_async(dispatch_get_main_queue(), ^{
           __typeof(self) strongSelf = weakSelf;
@@ -1393,8 +1391,6 @@ static __weak id<RTCAudioDeviceModuleDelegate> gAudioDeviceModuleObserver = nil;
       dispatch_async(FlutterWebRTCAudioSessionQueue(), ^{
         if (atomic_load(&gAppleAudioConfigurationGeneration) == generation) {
           [AudioUtils setAppleAudioConfiguration:configuration];
-        } else {
-          NSLog(@"[MAQ-AUDIO] skip site=setAppleAudioConfiguration reason=superseded");
         }
         dispatch_async(dispatch_get_main_queue(), ^{
           result(nil);
